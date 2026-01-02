@@ -4,69 +4,67 @@ import com.db.memory.cluster.ClusterManager;
 import com.db.memory.hashing.HashRing;
 import com.db.memory.replication.ReplicationManager;
 import com.db.memory.server.KVServer;
-import org.apache.zookeeper.WatchedEvent;
-import org.apache.zookeeper.Watcher;
 
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Refactored KVNode: Entry point for a distributed key-value store node
- */
-public class KVNode implements Watcher {
-
+public class KVNode {
     private final String nodeId;
-    private final Map<String, String> store;
-    private final ClusterManager clusterManager;
-    private final HashRing hashRing;
-    private final ReplicationManager replicationManager;
-    private final KVServer kvServer;
+    private final String zkConnect;
     private final int port;
+    private final List<String> replicas;
+    private final Map<String, String> store = new HashMap<>();
 
-    public KVNode(String nodeId, String zkConnectString, int port) throws Exception {
+    public KVNode(String nodeId, String zkConnect, int port, List<String> replicas) {
         this.nodeId = nodeId;
+        this.zkConnect = zkConnect;
         this.port = port;
-        this.store = new ConcurrentHashMap<>();
-        this.clusterManager = new ClusterManager(nodeId, zkConnectString);
-        this.hashRing = new HashRing(clusterManager);
-        this.replicationManager = new ReplicationManager(nodeId, clusterManager);
-        this.kvServer = new KVServer(port, store, replicationManager);
+        this.replicas = replicas;
+    }
 
-        clusterManager.initialize(this);
-        clusterManager.registerNode(port);
-        hashRing.build();
-        clusterManager.electLeadership(hashRing.getUniqueShardIds());
-        rebalanceKeys();
+    public void start() throws Exception {
+        ClusterManager clusterManager = new ClusterManager(nodeId, zkConnect);
+        clusterManager.initialize(event -> {
+        });
+
+        HashRing hashRing = new HashRing(clusterManager);
+        hashRing.buildHashRing();
+
+        // Try to become leader for this physical node
+        boolean isLeader = clusterManager.tryToBecomeLeader();
+        if (isLeader) {
+            clusterManager.registerNode(nodeId, replicas, true);
+        }
+        clusterManager.watchLeadership(nodeId, () -> {
+            try {
+                boolean won = clusterManager.tryToBecomeLeader();
+                if (won) {
+                    clusterManager.registerNode(nodeId, replicas, true);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+
+
+        ReplicationManager replicationManager = new ReplicationManager(nodeId, clusterManager);
+        KVServer kvServer = new KVServer(port, store, replicationManager, clusterManager, hashRing);
         new Thread(kvServer).start();
     }
 
-    private void rebalanceKeys() {
-        store.keySet().removeIf(key -> {
-            String rightfulOwner = hashRing.getTargetNode(key);
-            if (!rightfulOwner.equals(nodeId)) {
-                System.out.println("[" + nodeId + "] Rebalancing key='" + key + "' to node='" + rightfulOwner + "'");
-                return true;
-            }
-            return false;
-        });
-    }
-
-    @Override
-    public void process(WatchedEvent event) {
-        System.out.println("[" + nodeId + "] ZooKeeper event: " + event);
-    }
-
     public static void main(String[] args) throws Exception {
-        if (args.length < 3) {
-            System.err.println("Usage: java KVNode <nodeId> <zookeeper-host:port> <tcp-port>");
-            System.exit(1);
+        if (args.length < 4) {
+            System.out.println("Usage: java KVNode <nodeId> <zkConnect> <nodeId> <replica,replica,...>");
+            return;
         }
 
         String nodeId = args[0];
         String zkConnect = args[1];
         int port = Integer.parseInt(args[2]);
-
-        new KVNode(nodeId, zkConnect, port);
-        Thread.sleep(Long.MAX_VALUE); // keep running
+        List<String> replicas = Arrays.asList(args[3].split(","));
+        KVNode node = new KVNode(nodeId, zkConnect, port, replicas);
+        node.start();
     }
 }

@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: zookeeper:3.8
+    container_name: kvstore-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_SERVERS: server.1=zookeeper:2888:3888;2181
+      ZOO_LOG4J_PROP: "WARN,CONSOLE"  # Only show WARN and ERROR
+    volumes:
+      - zk-data:/data
+      - zk-logs:/datalog
+    networks:
+      - kvstore-net
+
+  node-1:
+    build: .
+    container_name: kvstore-node-1
+    ports:
+      - "9001:9001"
+      - "5006:5005"
+    command: ["block-1", "zookeeper:2181", "9001", "kvstore-node-2:9002"]
+    environment:
+      - JAVA_TOOL_OPTIONS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+    depends_on:
+      - zookeeper
+    networks:
+      - kvstore-net
+    restart: unless-stopped
+
+  node-2:
+    build: .
+    container_name: kvstore-node-2
+    ports:
+      - "9002:9002"
+    command: ["block-1", "zookeeper:2181", "9002", "kvstore-node-1:9001"]
+    depends_on:
+      - zookeeper
+    networks:
+      - kvstore-net
+    restart: unless-stopped
+
+  node-3:
+    build: .
+    container_name: kvstore-node-3
+    ports:
+      - "9003:9003"
+    command: ["block-2", "zookeeper:2181", "9003", "kvstore-node-4:9004"]
+    depends_on:
+      - zookeeper
+    networks:
+      - kvstore-net
+    restart: unless-stopped
+
+  node-4:
+    build: .
+    container_name: kvstore-node-4
+    ports:
+      - "9004:9004"
+    command: ["block-2", "zookeeper:2181", "9004", "kvstore-node-3:9003"]
+    depends_on:
+      - zookeeper
+    networks:
+      - kvstore-net
+    restart: unless-stopped
+
+networks:
+  kvstore-net:
+    driver: bridge
+
+volumes:
+  zk-data:
+  zk-logs:
