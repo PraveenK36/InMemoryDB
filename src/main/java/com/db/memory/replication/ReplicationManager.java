@@ -25,6 +25,7 @@ public class ReplicationManager {
                 sendWithRetry(replica, "PUT " + key + " " + value);
             }
         } catch (Exception e) {
+            e.printStackTrace();
             System.err.println("[" + nodeId + "] Failed to replicate PUT: " + e.getMessage());
         }
     }

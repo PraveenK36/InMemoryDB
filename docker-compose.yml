@@ -10,11 +10,21 @@ services:
       ZOO_MY_ID: 1
       ZOO_SERVERS: server.1=zookeeper:2888:3888;2181
       ZOO_LOG4J_PROP: "WARN,CONSOLE"  # Only show WARN and ERROR
+      ZOO_4LW_COMMANDS_WHITELIST: "*"
+      ZOO_TICK_TIME: 2000
+      ZOO_INIT_LIMIT: 10
+      ZOO_SYNC_LIMIT: 5
     volumes:
       - zk-data:/data
       - zk-logs:/datalog
     networks:
       - kvstore-net
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   node-1:
     build: .
@@ -22,11 +32,14 @@ services:
     ports:
       - "9001:9001"
       - "5006:5005"
-    command: ["block-1", "zookeeper:2181", "9001", "kvstore-node-2:9002"]
+    command: ["block-1", "kvstore-zookeeper:2181", "9001", "kvstore-node-2:9002"]
     environment:
       - JAVA_TOOL_OPTIONS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+      - ZK_CLIENT_LOG_LEVEL=ERROR
+      - JVMFLAGS=-Dorg.slf4j.simpleLogger.defaultLogLevel=warn -Dorg.slf4j.simpleLogger.log.org.apache.zookeeper=error
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     networks:
       - kvstore-net
     restart: unless-stopped
@@ -36,9 +49,14 @@ services:
     container_name: kvstore-node-2
     ports:
       - "9002:9002"
-    command: ["block-1", "zookeeper:2181", "9002", "kvstore-node-1:9001"]
+    command: ["block-1", "kvstore-zookeeper:2181", "9002", "kvstore-node-1:9001"]
+    environment:
+      - JAVA_TOOL_OPTIONS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+      - ZK_CLIENT_LOG_LEVEL=ERROR
+      - JVMFLAGS=-Dorg.slf4j.simpleLogger.defaultLogLevel=warn -Dorg.slf4j.simpleLogger.log.org.apache.zookeeper=error
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     networks:
       - kvstore-net
     restart: unless-stopped
@@ -48,9 +66,10 @@ services:
     container_name: kvstore-node-3
     ports:
       - "9003:9003"
-    command: ["block-2", "zookeeper:2181", "9003", "kvstore-node-4:9004"]
+    command: ["block-2", "kvstore-zookeeper:2181", "9003", "kvstore-node-4:9004"]
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     networks:
       - kvstore-net
     restart: unless-stopped
@@ -60,9 +79,10 @@ services:
     container_name: kvstore-node-4
     ports:
       - "9004:9004"
-    command: ["block-2", "zookeeper:2181", "9004", "kvstore-node-3:9003"]
+    command: ["block-2", "kvstore-zookeeper:2181", "9004", "kvstore-node-3:9003"]
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     networks:
       - kvstore-net
     restart: unless-stopped

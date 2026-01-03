@@ -5,6 +5,8 @@ import org.apache.zookeeper.data.Stat;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * ClusterManager handles node registration and metadata storage in ZooKeeper.
@@ -19,9 +21,20 @@ public class ClusterManager {
 
     public ClusterManager(String nodeId, String zkConnect) throws Exception {
         this.nodeId = nodeId;
-        this.zooKeeper = new ZooKeeper(zkConnect, 3000, event -> {
+        CountDownLatch connectedLatch = new CountDownLatch(1);
+        this.zooKeeper = new ZooKeeper(zkConnect, 30000, event -> {
             System.out.println("[" + nodeId + "] ZooKeeper event: " + event);
+            if (event.getState() == Watcher.Event.KeeperState.SyncConnected) {
+                connectedLatch.countDown();
+            }
         });
+
+        // Wait for connection (max 30 seconds)
+        if (!connectedLatch.await(30, TimeUnit.SECONDS)) {
+            throw new Exception("Could not connect to ZooKeeper within 30 seconds");
+        }
+
+        System.out.println("[" + nodeId + "] Connected to ZooKeeper");
     }
 
     public void initialize(Watcher watcher) throws KeeperException, InterruptedException {
@@ -40,7 +53,7 @@ public class ClusterManager {
         StringBuilder sb = new StringBuilder();
         sb.append(nodeId); // leader node
         if (replicas != null && !replicas.isEmpty()) {
-            sb.append(":" + String.join(",", replicas));
+            sb.append("|" + String.join(",", replicas));
         }
         byte[] metadata = sb.toString().getBytes(StandardCharsets.UTF_8);
 
@@ -108,15 +121,12 @@ public class ClusterManager {
         for (String node : nodes) {
             String path = ZK_NODES_PATH + "/" + node;
             byte[] data = zooKeeper.getData(path, false, null);
-            String[] parts = new String(data, StandardCharsets.UTF_8).split(":");
-            int port = Integer.parseInt(parts[0]);
+            String[] parts = new String(data, StandardCharsets.UTF_8).split("\\|");
             List<String> replicas = new ArrayList<>();
             if (parts.length > 1) {
-                for (String r : parts[1].split(",")) {
-                    replicas.add(r);
-                }
+                Collections.addAll(replicas, parts[1].split(","));
             }
-            nodeMap.put(node, new NodeInfo(node, port, replicas));
+            nodeMap.put(node, new NodeInfo(node, replicas));
         }
         return nodeMap;
     }
@@ -135,12 +145,10 @@ public class ClusterManager {
 
     public static class NodeInfo {
         public final String nodeId;
-        public final int port;
         public final List<String> replicas;
 
-        public NodeInfo(String nodeId, int port, List<String> replicas) {
+        public NodeInfo(String nodeId, List<String> replicas) {
             this.nodeId = nodeId;
-            this.port = port;
             this.replicas = replicas;
         }
 
@@ -148,7 +156,6 @@ public class ClusterManager {
         public String toString() {
             return "NodeInfo{" +
                     "nodeId='" + nodeId + '\'' +
-                    ", port=" + port +
                     ", replicas=" + replicas +
                     '}';
         }

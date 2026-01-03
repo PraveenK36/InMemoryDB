@@ -17,4 +17,4 @@ COPY --from=build /app/target/InMemoryDB-1.0-SNAPSHOT-jar-with-dependencies.jar 
 
 EXPOSE 9000-9010 5005
 
-ENTRYPOINT ["java", "-cp", "/app/kvstore.jar", "com.db.memory.KVNode"]
+ENTRYPOINT ["java", "-jar", "/app/kvstore.jar"]
