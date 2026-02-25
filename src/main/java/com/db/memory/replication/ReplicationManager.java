@@ -22,7 +22,7 @@ public class ReplicationManager {
         try {
             NodeInfo self = clusterManager.getNodeMetadata().get(nodeId);
             for (String replica : self.replicas) {
-                sendWithRetry(replica, "PUT " + key + " " + value);
+                sendWithRetry(replica, "REPLICATE PUT " + key + " " + value);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -34,7 +34,7 @@ public class ReplicationManager {
         try {
             NodeInfo self = clusterManager.getNodeMetadata().get(nodeId);
             for (String replica : self.replicas) {
-                sendWithRetry(replica, "DELETE " + key);
+                sendWithRetry(replica, "REPLICATE DELETE " + key);
             }
         } catch (Exception e) {
             System.err.println("[" + nodeId + "] Failed to replicate DELETE: " + e.getMessage());

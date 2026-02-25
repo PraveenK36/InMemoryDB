@@ -5,6 +5,7 @@ import com.db.memory.hashing.HashRing;
 import com.db.memory.replication.ReplicationManager;
 import com.db.memory.server.KVServer;
 
+import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -25,18 +26,21 @@ public class KVNode {
     }
 
     public void start() throws Exception {
-        ClusterManager clusterManager = new ClusterManager(nodeId, zkConnect);
+        String hostname = InetAddress.getLocalHost().getHostName();
+        String nodeAddress = hostname + ":" + port;
+        ClusterManager clusterManager = new ClusterManager(nodeId, nodeAddress, zkConnect);
         clusterManager.initialize(event -> {
         });
-
-        HashRing hashRing = new HashRing(clusterManager);
-        hashRing.buildHashRing();
 
         // Try to become leader for this physical node
         boolean isLeader = clusterManager.tryToBecomeLeader();
         if (isLeader) {
             clusterManager.registerNode(nodeId, replicas, true);
         }
+
+        // Build hash ring after leader election so leaders are visible
+        HashRing hashRing = new HashRing(clusterManager);
+        hashRing.buildHashRing();
         clusterManager.watchLeadership(nodeId, () -> {
             try {
                 boolean won = clusterManager.tryToBecomeLeader();

@@ -15,12 +15,14 @@ import java.util.concurrent.TimeUnit;
  */
 public class ClusterManager {
     private final String nodeId;
+    private final String nodeAddress;
     private final ZooKeeper zooKeeper;
     private static final String ZK_NODES_PATH = "/nodes";
     private static final String ZK_LEADERS_PATH = "/leaders";
 
-    public ClusterManager(String nodeId, String zkConnect) throws Exception {
+    public ClusterManager(String nodeId, String nodeAddress, String zkConnect) throws Exception {
         this.nodeId = nodeId;
+        this.nodeAddress = nodeAddress;
         CountDownLatch connectedLatch = new CountDownLatch(1);
         this.zooKeeper = new ZooKeeper(zkConnect, 30000, event -> {
             System.out.println("[" + nodeId + "] ZooKeeper event: " + event);
@@ -70,7 +72,7 @@ public class ClusterManager {
     public boolean tryToBecomeLeader() throws KeeperException, InterruptedException {
         String path = ZK_LEADERS_PATH + "/" + nodeId;
         try {
-            zooKeeper.create(path, nodeId.getBytes(StandardCharsets.UTF_8), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+            zooKeeper.create(path, nodeAddress.getBytes(StandardCharsets.UTF_8), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
             System.out.println("[" + nodeId + "] Became leader.");
             return true;
         } catch (KeeperException.NodeExistsException e) {
@@ -141,6 +143,10 @@ public class ClusterManager {
 
     public String getNodeId() {
         return this.nodeId;
+    }
+
+    public String getNodeAddress() {
+        return this.nodeAddress;
     }
 
     public static class NodeInfo {

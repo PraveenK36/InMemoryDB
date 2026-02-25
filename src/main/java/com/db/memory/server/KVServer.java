@@ -48,23 +48,29 @@ public class KVServer implements Runnable {
             if (line == null) return;
 
             String[] parts = line.split(" ");
-            String command = parts[0];
-            String key = parts.length > 1 ? parts[1] : null;
-            String value = parts.length > 2 ? parts[2] : null;
+            boolean isReplication = "REPLICATE".equalsIgnoreCase(parts[0]);
+            int offset = isReplication ? 1 : 0;
+            String command = parts[offset];
+            String key = parts.length > offset + 1 ? parts[offset + 1] : null;
+            String value = parts.length > offset + 2 ? parts[offset + 2] : null;
 
-            String expectedOwner = hashRing.getTargetNode(key);
-            String currentLeader = clusterManager.getCurrentLeader(expectedOwner);
-            boolean isLeader = clusterManager.getNodeId().equals(currentLeader);
+            if (!isReplication) {
+                String expectedOwner = hashRing.getTargetNode(key);
+                String currentLeader = clusterManager.getCurrentLeader(expectedOwner);
+                boolean isLeader = clusterManager.getNodeAddress().equals(currentLeader);
 
-            if (("PUT".equalsIgnoreCase(command) || "DELETE".equalsIgnoreCase(command)) && !isLeader) {
-                writer.println("ERROR: Node " + clusterManager.getNodeId() + " is not the leader for key " + key);
-                return;
+                if (("PUT".equalsIgnoreCase(command) || "DELETE".equalsIgnoreCase(command)) && !isLeader) {
+                    writer.println("ERROR: Node " + clusterManager.getNodeId() + " is not the leader for key " + key);
+                    return;
+                }
             }
 
             switch (command.toUpperCase()) {
                 case "PUT" -> {
                     store.put(key, value);
-                    replicationManager.replicatePut(key, value);
+                    if (!isReplication) {
+                        replicationManager.replicatePut(key, value);
+                    }
                     writer.println("OK");
                 }
                 case "GET" -> {
@@ -73,7 +79,9 @@ public class KVServer implements Runnable {
                 }
                 case "DELETE" -> {
                     store.remove(key);
-                    replicationManager.replicateDelete(key);
+                    if (!isReplication) {
+                        replicationManager.replicateDelete(key);
+                    }
                     writer.println("OK");
                 }
                 default -> writer.println("ERROR: Unknown command");

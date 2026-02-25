@@ -87,6 +87,19 @@ services:
       - kvstore-net
     restart: unless-stopped
 
+  node-5:
+    build: .
+    container_name: kvstore-node-5
+    ports:
+      - "9005:9005"
+    command: ["block-1", "kvstore-zookeeper:2181", "9005", "kvstore-node-3:9001,kvstore-node-3:9002"]
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - kvstore-net
+    restart: unless-stopped
+
 networks:
   kvstore-net:
     driver: bridge
